@@ -25,6 +25,7 @@ namespace Sign.Cli
         internal Option<string> CertificateOption { get; } = new(new[] { "-kvc", "--azure-key-vault-certificate" }, AzureKeyVaultResources.CertificateOptionDescription);
         internal Option<string?> ClientIdOption { get; } = new(new[] { "-kvi", "--azure-key-vault-client-id" }, AzureKeyVaultResources.ClientIdOptionDescription);
         internal Option<string?> ClientSecretOption { get; } = new(new[] { "-kvs", "--azure-key-vault-client-secret" }, AzureKeyVaultResources.ClientSecretOptionDescription);
+        internal Option<string?> AccessTokenOption { get; } = new(new[] { "-kvat", "--azure-key-vault-access-token" }, AzureKeyVaultResources.ClientSecretOptionDescription);
         internal Argument<string?> FileArgument { get; } = new("file(s)", AzureKeyVaultResources.FilesArgumentDescription);
         internal Option<bool> ManagedIdentityOption { get; } = new(new[] { "-kvm", "--azure-key-vault-managed-identity" }, getDefaultValue: () => false, AzureKeyVaultResources.ManagedIdentityOptionDescription);
         internal Option<string?> TenantIdOption { get; } = new(new[] { "-kvt", "--azure-key-vault-tenant-id" }, AzureKeyVaultResources.TenantIdOptionDescription);
@@ -48,6 +49,7 @@ namespace Sign.Cli
             AddOption(ClientIdOption);
             AddOption(ClientSecretOption);
             AddOption(CertificateOption);
+            AddOption(AccessTokenOption);
             AddOption(ManagedIdentityOption);
 
             AddArgument(FileArgument);
@@ -86,6 +88,7 @@ namespace Sign.Cli
                 string? tenantId = context.ParseResult.GetValueForOption(TenantIdOption);
                 string? clientId = context.ParseResult.GetValueForOption(ClientIdOption);
                 string? secret = context.ParseResult.GetValueForOption(ClientSecretOption);
+                string? accessToken = context.ParseResult.GetValueForOption(AccessTokenOption);
                 string? certificateId = context.ParseResult.GetValueForOption(CertificateOption);
                 bool useManagedIdentity = context.ParseResult.GetValueForOption(ManagedIdentityOption);
 
@@ -192,21 +195,39 @@ namespace Sign.Cli
                 else
                 {
                     if (string.IsNullOrEmpty(tenantId) ||
-                        string.IsNullOrEmpty(clientId) ||
-                        string.IsNullOrEmpty(secret))
+                        string.IsNullOrEmpty(clientId))
+                    {
+                        context.Console.Error.WriteLine(
+                           FormatMessage(
+                               AzureKeyVaultResources.InvalidClientSecretCredential,
+                               TenantIdOption,
+                               ClientIdOption
+                           ));
+                        context.ExitCode = ExitCode.NoInputsFound;
+                        return;
+                    }
+
+                    if (!string.IsNullOrEmpty(secret))
+                    {
+                        credential = new ClientSecretCredential(tenantId!, clientId!, secret!);
+                    }
+                    else if (!string.IsNullOrEmpty(accessToken))
+                    {
+                        // https://learn.microsoft.com/en-us/dotnet/api/microsoft.azure.storage.auth.tokencredential.-ctor?view=azure-dotnet
+                        credential = new AccessTokenOption(accessToken!);
+                    }
+                    else
                     {
                         context.Console.Error.WriteLine(
                             FormatMessage(
                                 AzureKeyVaultResources.InvalidClientSecretCredential,
                                 TenantIdOption,
-                                ClientIdOption,
-                                ClientSecretOption));
+                                ClientIdOption
+                            ));
                         context.ExitCode = ExitCode.NoInputsFound;
 
                         return;
                     }
-
-                    credential = new ClientSecretCredential(tenantId!, clientId!, secret!);
                 }
 
                 ISigner signer = serviceProvider.GetRequiredService<ISigner>();
